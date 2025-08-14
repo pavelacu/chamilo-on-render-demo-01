@@ -1,0 +1,55 @@
+# Cache directories
+
+app/cache/*
+!app/cache/.gitkeep
+!app/cache/.htaccess
+
+app/logs/*
+!app/logs/.gitkeep
+
+# Chamilo configuration
+/app/config/parameters.yml
+/app/config/add_course.conf.php
+/app/config/auth.conf.php
+/app/config/course_info.conf.php
+/app/config/events.conf.php
+/app/config/mail.conf.php
+/app/config/profile.conf.php
+/app/config/configuration.php
+
+# Courses
+app/courses/*
+!app/courses/proxy.php
+
+# Home
+app/home/*
+
+# Upload content
+app/upload/*
+
+.php_cs.cache
+
+# Logs and databases #
+*.log
+
+# IDE settings
+.idea
+.idea/*
+.idea/dictionaries/*
+.idea/cssxfire.xml
+
+*.orig
+nbproject/*
+
+# Plugins config files
+plugin/bbb/config.vm.php
+
+# Cron temp files
+main/cron/incoming/*
+plugin/vchamilo/templates/*
+
+# Stuff updated through composer - Remove just before release
+/vendor
+web/
+node_modules
+yarn.lock
