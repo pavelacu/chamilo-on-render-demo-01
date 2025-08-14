@@ -3,14 +3,21 @@ services:
     name: chamilo-on-render
     env: docker
     plan: free
-    branch: main
     dockerfilePath: ./Dockerfile
     envVars:
+      - key: SERVER_NAME
+        value: chamilo-demo-01.onrender.com
+      - key: CHAMILO_DATA
+        value: /var/www/chamilo-data
       - key: DATABASE_HOST
-        value: tu_host_mysql
+        value: <tu_host>
       - key: DATABASE_USER
-        value: usuario
+        value: <tu_usuario>
       - key: DATABASE_PASSWORD
-        value: contraseña
+        value: <tu_password>
       - key: DATABASE_NAME
-        value: nombre_bd
+        value: <tu_bd>
+    disk:
+      name: chamilo-data
+      mountPath: /var/www/chamilo-data
+      sizeGB: 2
