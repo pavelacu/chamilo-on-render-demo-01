@@ -2,7 +2,7 @@ FROM php:8.1-apache
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 1) Dependencias de compilación y de runtime (más tolerantes entre Debian releases)
+# 1) Dependencias de compilación y runtime (incluye libonig-dev para mbstring)
 RUN set -eux; \
   apt-get update; \
   apt-get install -y --no-install-recommends \
@@ -16,41 +16,37 @@ RUN set -eux; \
     zlib1g-dev \
     libicu-dev \
     libxml2-dev \
+    libonig-dev \
     unzip \
     git \
     default-mysql-client; \
   rm -rf /var/lib/apt/lists/*
 
 # 2) Extensiones PHP (separadas para aislar errores)
-# gd con JPEG/Freetype
 RUN set -eux; \
   docker-php-ext-configure gd --with-freetype --with-jpeg; \
   docker-php-ext-install -j"$(nproc)" gd
 
-# mysqli + pdo_mysql
 RUN set -eux; \
   docker-php-ext-install -j"$(nproc)" mysqli pdo_mysql
 
-# zip (usa libzip del sistema; zlib ya está)
 RUN set -eux; \
   docker-php-ext-install -j"$(nproc)" zip
 
-# intl (necesita libicu-dev + toolchain)
 RUN set -eux; \
   docker-php-ext-install -j"$(nproc)" intl
 
-# mbstring y opcache normalmente no requieren librerías extra
+# mbstring necesita libonig-dev
 RUN set -eux; \
   docker-php-ext-install -j"$(nproc)" mbstring opcache
 
 # 3) (Opcional) limpiar toolchain para aligerar imagen
-#    TIP: Si el build falla, comenta este bloque para depurar más fácil.
 RUN set -eux; \
   apt-get update; \
   apt-get purge -y --auto-remove build-essential autoconf pkg-config; \
   rm -rf /var/lib/apt/lists/*
 
-# 4) Copiar el código (en tu repo está bajo /chamilo)
+# 4) Copiar Chamilo (en tu repo está bajo /chamilo)
 COPY chamilo/ /var/www/html/
 
 # 5) Normalizar si el zip dejó subcarpeta (chamilo/ o chamilo-*)
@@ -64,7 +60,7 @@ RUN set -eux; \
     fi; \
   done
 
-# 6) Apache: mod_rewrite, AllowOverride y DirectoryIndex
+# 6) Apache: rewrite, AllowOverride y DirectoryIndex
 RUN set -eux; \
   a2enmod rewrite; \
   printf "<Directory /var/www/html>\n  AllowOverride All\n  Require all granted\n</Directory>\n" > /etc/apache2/conf-available/override.conf; \
@@ -72,7 +68,7 @@ RUN set -eux; \
   printf "DirectoryIndex index.php index.html\n" > /etc/apache2/conf-available/dirindex.conf; \
   a2enconf dirindex
 
-# 7) Permisos y carpetas de cache/logs de Chamilo
+# 7) Permisos y carpetas cache/logs de Chamilo
 RUN set -eux; \
   chown -R www-data:www-data /var/www/html; \
   find /var/www/html -type d -print0 | xargs -0 chmod 755; \
