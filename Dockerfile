@@ -20,7 +20,7 @@ RUN curl -sS https://getcomposer.org/installer | php -- \
 # Copiar Chamilo desde el repo (carpeta 'chamilo/')
 COPY chamilo/ /app/
 
-# Instalar dependencias (ignorando reqs de extensiones en CLI)
+# Instalar dependencias (ignorando reqs de extensiones en CLI; en runtime sí estarán)
 RUN set -eux; \
   composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader \
     --ignore-platform-req=ext-gd \
@@ -69,39 +69,57 @@ RUN set -eux; \
   printf "SetEnvIf X-Forwarded-Proto \"^https$\" HTTPS=on\n" > /etc/apache2/conf-available/forwarded.conf; \
   a2enconf forwarded
 
-# Script de arranque: enlaza carpetas de escritura al Disk, permisos, endurecimiento, puerto
+# Script de arranque:
+# - Asegura que /var/www/html/app NO sea symlink (de despliegues anteriores).
+# - Enlaza SOLO subcarpetas de escritura a Disk: app/config, app/cache, app/logs, web, courses, archive, home, temp, upload, main/.../images, main/lang
+# - Aplica permisos, endurece tras instalación y ajusta puerto de Render.
 RUN printf '#!/bin/sh\nset -e\n'\
 'PORT=${PORT:-80}\n'\
 'DATA_DIR=${CHAMILO_DATA:-/var/www/chamilo-data}\n'\
-'# Directorios persistentes con escritura\n'\
-'PERSIST_DIRS="app app/config app/cache app/logs web courses archive home temp upload main/default_course_document/images main/lang"\n'\
 '\n'\
-'# Crear/enlazar cada directorio al Disk\n'\
-'for d in $PERSIST_DIRS; do\n'\
-'  SRC="/var/www/html/$d"\n'\
-'  DST="$DATA_DIR/$d"\n'\
-'  mkdir -p "$DST"\n'\
-'  if [ -e "$SRC" ] && [ ! -L "$SRC" ]; then\n'\
-'    if [ -d "$SRC" ]; then\n'\
-'      # mover contenido si lo hay\n'\
-'      find "$SRC" -mindepth 1 -maxdepth 1 -exec mv -f {} "$DST"/ \\; 2>/dev/null || true\n'\
-'      rmdir "$SRC" 2>/dev/null || true\n'\
-'    else\n'\
-'      mv -f "$SRC" "$DST"/ 2>/dev/null || true\n'\
-'      rm -f "$SRC" 2>/dev/null || true\n'\
-'    fi\n'\
-'  fi\n'\
-'  [ -L "$SRC" ] || ln -s "$DST" "$SRC"\n'\
-'done\n'\
+'# Si por un despliegue anterior app es symlink, eliminarlo para restaurar app/ del código\n'\
+'if [ -L /var/www/html/app ]; then\n'\
+'  echo "[INFO] Detected legacy symlink at /var/www/html/app → removing to restore code dir";\n'\
+'  rm -f /var/www/html/app;\n'\
+'  mkdir -p /var/www/html/app; # por si hiciera falta (normalmente ya existe por el COPY)\n'\
+'fi\n'\
 '\n'\
-'# Dueño y permisos en el Disk\n'\
-'chown -R www-data:www-data "$DATA_DIR"\n'\
-'chmod -R 775 "$DATA_DIR"/app "$DATA_DIR"/web "$DATA_DIR"/courses "$DATA_DIR"/archive "$DATA_DIR"/home "$DATA_DIR"/temp "$DATA_DIR"/upload "$DATA_DIR"/main "$DATA_DIR"/app/cache "$DATA_DIR"/app/logs 2>/dev/null || true\n'\
+'# Conjunto de carpetas de ESCRITURA que deben ser persistentes\n'\
+'PERSIST_DIRS="app/config app/cache app/logs web courses archive home temp upload main/default_course_document/images main/lang"\n'\
 '\n'\
-'# Endurecimiento post-instalación (si ya existe la config)\n'\
+'# ¿Existe un Disk montado en DATA_DIR?\n'\
+'if grep -qs " $DATA_DIR " /proc/mounts; then\n'\
+'  echo "[INFO] Persistent disk detected at $DATA_DIR";\n'\
+'  for d in $PERSIST_DIRS; do\n'\
+'    SRC="/var/www/html/$d"; DST="$DATA_DIR/$d"; mkdir -p "$DST";\n'\
+'    if [ -e "$SRC" ] && [ ! -L "$SRC" ]; then\n'\
+'      if [ -d "$SRC" ]; then\n'\
+'        find "$SRC" -mindepth 1 -maxdepth 1 -exec mv -f {} "$DST"/ \\; 2>/dev/null || true;\n'\
+'        rmdir "$SRC" 2>/dev/null || true;\n'\
+'      else\n'\
+'        mv -f "$SRC" "$DST"/ 2>/dev/null || true; rm -f "$SRC" 2>/dev/null || true;\n'\
+'      fi;\n'\
+'    fi;\n'\
+'    [ -L "$SRC" ] || ln -s "$DST" "$SRC";\n'\
+'  done;\n'\
+'  chown -R www-data:www-data "$DATA_DIR";\n'\
+'  chmod -R 775 "$DATA_DIR"/app "$DATA_DIR"/web "$DATA_DIR"/courses "$DATA_DIR"/archive "$DATA_DIR"/home "$DATA_DIR"/temp "$DATA_DIR"/upload "$DATA_DIR"/main "$DATA_DIR"/app/cache "$DATA_DIR"/app/logs 2>/dev/null || true;\n'\
+'else\n'\
+'  if [ "${ALLOW_EPHEMERAL:-}" = "1" ]; then\n'\
+'    echo "[WARN] No persistent disk mounted at $DATA_DIR. Running in EPHEMERAL mode (data will be lost).";\n'\
+'    for d in $PERSIST_DIRS; do\n'\
+'      mkdir -p "/var/www/html/$d"; chown -R www-data:www-data "/var/www/html/$d"; chmod -R 775 "/var/www/html/$d";\n'\
+'    done;\n'\
+'  else\n'\
+'    echo "[ERROR] No persistent disk mounted at $DATA_DIR. Attach a Disk or set ALLOW_EPHEMERAL=1 to proceed without persistence." >&2;\n'\
+'    exit 1;\n'\
+'  fi;\n'\
+'fi\n'\
+'\n'\
+'# Endurecimiento post-instalación (si ya existe la config en el Disk)\n'\
 'if [ -f "$DATA_DIR/app/config/configuration.php" ]; then\n'\
-'  chmod -R 0555 "$DATA_DIR/app/config" || true\n'\
-'  rm -rf /var/www/html/main/install || true\n'\
+'  chmod -R 0555 "$DATA_DIR/app/config" 2>/dev/null || true\n'\
+'  rm -rf /var/www/html/main/install 2>/dev/null || true\n'\
 'fi\n'\
 '\n'\
 '# Ajustar Apache al puerto de Render\n'\
