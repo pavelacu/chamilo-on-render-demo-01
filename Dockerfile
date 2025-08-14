@@ -2,7 +2,7 @@ FROM php:8.1-apache
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 1) Dependencias de compilación y runtime (incluye libonig-dev para mbstring)
+# 1) Dependencias de compilación y runtime
 RUN set -eux; \
   apt-get update; \
   apt-get install -y --no-install-recommends \
@@ -23,20 +23,24 @@ RUN set -eux; \
   rm -rf /var/lib/apt/lists/*
 
 # 2) Extensiones PHP (separadas para aislar errores)
+# gd con JPEG/Freetype
 RUN set -eux; \
   docker-php-ext-configure gd --with-freetype --with-jpeg; \
   docker-php-ext-install -j"$(nproc)" gd
 
+# mysqli + pdo_mysql
 RUN set -eux; \
   docker-php-ext-install -j"$(nproc)" mysqli pdo_mysql
 
+# zip
 RUN set -eux; \
   docker-php-ext-install -j"$(nproc)" zip
 
+# intl
 RUN set -eux; \
   docker-php-ext-install -j"$(nproc)" intl
 
-# mbstring necesita libonig-dev
+# mbstring y opcache
 RUN set -eux; \
   docker-php-ext-install -j"$(nproc)" mbstring opcache
 
@@ -68,13 +72,12 @@ RUN set -eux; \
   printf "DirectoryIndex index.php index.html\n" > /etc/apache2/conf-available/dirindex.conf; \
   a2enconf dirindex
 
-# 7) Permisos y carpetas cache/logs de Chamilo
+# 7) Permisos y carpetas cache/logs de Chamilo (sin xargs)
 RUN set -eux; \
   chown -R www-data:www-data /var/www/html; \
-  find /var/www/html -type d -print0 | xargs -0 chmod 755; \
-  find /var/www/html -type f -print0 | xargs -0 chmod 644; \
-  mkdir -p /var/www/html/app/cache /var/www/html/app/logs || true; \
-  chown -R www-data:www-data /var/www/html/app/cache /var/www/html/app/logs || true
+  find /var/www/html -type d -exec chmod 755 {} +; \
+  find /var/www/html -type f -exec chmod 644 {} +; \
+  install -d -o www-data -g www-data /var/www/html/app/cache /var/www/html/app/logs
 
 # 8) Ajustes PHP recomendados
 RUN set -eux; { \
