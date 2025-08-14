@@ -1,0 +1,6 @@
+/vendor
+/app/cache
+/app/logs
+/config/configuration.php
+*.log
+*.env

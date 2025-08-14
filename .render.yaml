@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: chamilo-on-render
+    env: docker
+    plan: free
+    branch: main
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: DATABASE_HOST
+        value: tu_host_mysql
+      - key: DATABASE_USER
+        value: usuario
+      - key: DATABASE_PASSWORD
+        value: contraseña
+      - key: DATABASE_NAME
+        value: nombre_bd
