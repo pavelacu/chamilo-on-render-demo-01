@@ -61,22 +61,27 @@ RUN set -eux; \
 # Copiar código + vendor desde la etapa deps
 COPY --from=deps /app/ /var/www/html/
 
-# Apache: mod_rewrite, AllowOverride, DirectoryIndex, ServerName
+# Apache: mod_rewrite, AllowOverride, DirectoryIndex, ServerName, headers p/ HTTPS tras proxy
 RUN set -eux; \
-  a2enmod rewrite; \
+  a2enmod rewrite headers; \
   printf "<Directory /var/www/html>\n  AllowOverride All\n  Require all granted\n</Directory>\n" > /etc/apache2/conf-available/override.conf; \
   a2enconf override; \
   printf "DirectoryIndex index.php index.html\nServerName localhost\n" > /etc/apache2/conf-available/dirindex.conf; \
-  a2enconf dirindex
+  a2enconf dirindex; \
+  # Hace que PHP detecte HTTPS cuando Render pone X-Forwarded-Proto: https
+  printf "SetEnvIf X-Forwarded-Proto \"^https$\" HTTPS=on\n" > /etc/apache2/conf-available/forwarded.conf; \
+  a2enconf forwarded
 
-# Permisos y carpetas necesarias
+# Directorios que Chamilo usa en runtime + permisos
 RUN set -eux; \
+  install -d -o www-data -g www-data /var/www/html/{courses,archive,home,temp,upload}; \
+  install -d -o www-data -g www-data /var/www/html/app/{cache,logs}; \
   chown -R www-data:www-data /var/www/html; \
   find /var/www/html -type d -exec chmod 755 {} +; \
   find /var/www/html -type f -exec chmod 644 {} +; \
-  install -d -o www-data -g www-data /var/www/html/app/cache /var/www/html/app/logs
+  chmod -R 775 /var/www/html/{courses,archive,home,temp,upload} /var/www/html/app/{cache,logs}
 
-# Ajustes PHP
+# Ajustes PHP recomendados
 RUN set -eux; { \
   echo "upload_max_filesize=64M"; \
   echo "post_max_size=64M"; \
