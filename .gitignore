@@ -4,3 +4,4 @@
 /config/configuration.php
 *.log
 *.env
+chamilo.ini
