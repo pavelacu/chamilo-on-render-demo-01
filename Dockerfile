@@ -1,14 +1,16 @@
-# PHP + Apache
 FROM php:8.1-apache
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# 1) Dependencias de compilación y de runtime
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# 1) Dependencias de compilación y de runtime (más tolerantes entre Debian releases)
+RUN set -eux; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends \
     build-essential \
+    autoconf \
     pkg-config \
     libpng-dev \
-    libjpeg62-turbo-dev \
+    libjpeg-dev \
     libfreetype6-dev \
     libzip-dev \
     zlib1g-dev \
@@ -16,51 +18,77 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxml2-dev \
     unzip \
     git \
-    mariadb-client \
- && docker-php-ext-configure gd --with-freetype --with-jpeg \
- # 2) Extensiones PHP
- && docker-php-ext-install -j"$(nproc)" gd mysqli pdo_mysql zip intl mbstring opcache \
- # 3) Limpiar: quitamos toolchain y cache de apt (manteniendo solo runtime)
- && apt-get purge -y --auto-remove build-essential pkg-config \
- && rm -rf /var/lib/apt/lists/*
+    default-mysql-client; \
+  rm -rf /var/lib/apt/lists/*
 
-# 4) Copiar código (en tu repo está dentro de /chamilo)
+# 2) Extensiones PHP (separadas para aislar errores)
+# gd con JPEG/Freetype
+RUN set -eux; \
+  docker-php-ext-configure gd --with-freetype --with-jpeg; \
+  docker-php-ext-install -j"$(nproc)" gd
+
+# mysqli + pdo_mysql
+RUN set -eux; \
+  docker-php-ext-install -j"$(nproc)" mysqli pdo_mysql
+
+# zip (usa libzip del sistema; zlib ya está)
+RUN set -eux; \
+  docker-php-ext-install -j"$(nproc)" zip
+
+# intl (necesita libicu-dev + toolchain)
+RUN set -eux; \
+  docker-php-ext-install -j"$(nproc)" intl
+
+# mbstring y opcache normalmente no requieren librerías extra
+RUN set -eux; \
+  docker-php-ext-install -j"$(nproc)" mbstring opcache
+
+# 3) (Opcional) limpiar toolchain para aligerar imagen
+#    TIP: Si el build falla, comenta este bloque para depurar más fácil.
+RUN set -eux; \
+  apt-get update; \
+  apt-get purge -y --auto-remove build-essential autoconf pkg-config; \
+  rm -rf /var/lib/apt/lists/*
+
+# 4) Copiar el código (en tu repo está bajo /chamilo)
 COPY chamilo/ /var/www/html/
 
-# 5) Normalizar raíz si el zip dejó una subcarpeta (chamilo/ o chamilo-*)
+# 5) Normalizar si el zip dejó subcarpeta (chamilo/ o chamilo-*)
 RUN set -eux; \
- if [ -d /var/www/html/chamilo ] && [ -f /var/www/html/chamilo/index.php ]; then \
-   mv /var/www/html/chamilo/* /var/www/html/ && rmdir /var/www/html/chamilo; \
- fi; \
- for d in /var/www/html/chamilo-*; do \
-   if [ -d "$d" ] && [ -f "$d/index.php" ]; then \
-     mv "$d"/* /var/www/html/ && rmdir "$d"; \
-   fi; \
- done
+  if [ -d /var/www/html/chamilo ] && [ -f /var/www/html/chamilo/index.php ]; then \
+    mv /var/www/html/chamilo/* /var/www/html/ && rmdir /var/www/html/chamilo; \
+  fi; \
+  for d in /var/www/html/chamilo-*; do \
+    if [ -d "$d" ] && [ -f "$d/index.php" ]; then \
+      mv "$d"/* /var/www/html/ && rmdir "$d"; \
+    fi; \
+  done
 
-# 6) Apache: mod_rewrite, .htaccess y DirectoryIndex
-RUN a2enmod rewrite \
- && printf "<Directory /var/www/html>\n  AllowOverride All\n  Require all granted\n</Directory>\n" > /etc/apache2/conf-available/override.conf \
- && a2enconf override \
- && printf "DirectoryIndex index.php index.html\n" > /etc/apache2/conf-available/dirindex.conf \
- && a2enconf dirindex
+# 6) Apache: mod_rewrite, AllowOverride y DirectoryIndex
+RUN set -eux; \
+  a2enmod rewrite; \
+  printf "<Directory /var/www/html>\n  AllowOverride All\n  Require all granted\n</Directory>\n" > /etc/apache2/conf-available/override.conf; \
+  a2enconf override; \
+  printf "DirectoryIndex index.php index.html\n" > /etc/apache2/conf-available/dirindex.conf; \
+  a2enconf dirindex
 
-# 7) Permisos y carpetas usadas por Chamilo
-RUN chown -R www-data:www-data /var/www/html \
- && find /var/www/html -type d -print0 | xargs -0 chmod 755 \
- && find /var/www/html -type f -print0 | xargs -0 chmod 644 \
- && mkdir -p /var/www/html/app/cache /var/www/html/app/logs || true \
- && chown -R www-data:www-data /var/www/html/app/cache /var/www/html/app/logs || true
+# 7) Permisos y carpetas de cache/logs de Chamilo
+RUN set -eux; \
+  chown -R www-data:www-data /var/www/html; \
+  find /var/www/html -type d -print0 | xargs -0 chmod 755; \
+  find /var/www/html -type f -print0 | xargs -0 chmod 644; \
+  mkdir -p /var/www/html/app/cache /var/www/html/app/logs || true; \
+  chown -R www-data:www-data /var/www/html/app/cache /var/www/html/app/logs || true
 
-# 8) Ajustes PHP recomendados (puedes subirlos si lo necesitas)
-RUN { \
+# 8) Ajustes PHP recomendados
+RUN set -eux; { \
   echo "upload_max_filesize=64M"; \
   echo "post_max_size=64M"; \
   echo "memory_limit=512M"; \
   echo "max_execution_time=300"; \
 } > /usr/local/etc/php/conf.d/chamilo.ini
 
-# 9) Respetar $PORT de Render en runtime
+# 9) Respetar $PORT de Render
 RUN printf '#!/bin/sh\nset -e\nPORT=${PORT:-80}\n'\
 'sed -ri "s/^Listen 80/Listen ${PORT}/" /etc/apache2/ports.conf || true\n'\
 'sed -ri "s/:80>/:${PORT}>/" /etc/apache2/sites-available/000-default.conf || true\n'\
