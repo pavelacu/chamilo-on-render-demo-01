@@ -10,13 +10,13 @@ services:
       - key: CHAMILO_DATA
         value: /var/www/chamilo-data
       - key: DATABASE_HOST
-        value: <tu_host>
+        value: <host_db>
       - key: DATABASE_USER
-        value: <tu_usuario>
+        value: <user_db>
       - key: DATABASE_PASSWORD
-        value: <tu_password>
+        value: <password_db>
       - key: DATABASE_NAME
-        value: <tu_bd>
+        value: <bdname>
     disk:
       name: chamilo-data
       mountPath: /var/www/chamilo-data
