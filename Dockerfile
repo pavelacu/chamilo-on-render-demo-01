@@ -1,23 +1,42 @@
-# ---------- Etapa 1: construir dependencias PHP con Composer ----------
-FROM composer:2 AS deps
-WORKDIR /app
-ENV COMPOSER_ALLOW_SUPERUSER=1
+# =========================
+# Etapa 1: deps (PHP 7.4 CLI + Composer)
+# =========================
+FROM php:7.4-cli AS deps
 
-# Copiamos TODO Chamilo del repo (está en /chamilo) a la etapa de build
+ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /app
+
+# Herramientas y ZIP para Composer
+RUN set -eux; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends git unzip curl libzip-dev zlib1g-dev; \
+  docker-php-ext-install -j"$(nproc)" zip; \
+  rm -rf /var/lib/apt/lists/*
+
+# Instalar Composer
+RUN curl -sS https://getcomposer.org/installer | php -- \
+  --install-dir=/usr/local/bin \
+  --filename=composer
+
+# Copiar Chamilo desde tu repo (carpeta 'chamilo/')
 COPY chamilo/ /app/
 
-# Instala dependencias de PHP (sin dev) y optimiza el autoloader
-RUN composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+# Instalar dependencias PHP (ignora reqs de extensiones en CLI; en runtime sí estarán)
+RUN set -eux; \
+  composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader \
+    --ignore-platform-req=ext-gd \
+    --ignore-platform-req=ext-intl \
+    --ignore-platform-req=ext-soap; \
+  test -f /app/vendor/autoload.php
 
-# Verificación temprana: debe existir vendor/autoload.php o fallar el build
-RUN test -f /app/vendor/autoload.php
-
-# ---------- Etapa 2: runtime con Apache + PHP ----------
-FROM php:8.1-apache
+# =========================
+# Etapa 2: runtime (Apache + PHP 7.4)
+# =========================
+FROM php:7.4-apache
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Paquetes de runtime y toolchain para compilar extensiones
+# Paquetes para compilar/extensiones requeridas por Chamilo
 RUN set -eux; \
   apt-get update; \
   apt-get install -y --no-install-recommends \
@@ -25,24 +44,24 @@ RUN set -eux; \
     libpng-dev libjpeg-dev libfreetype6-dev \
     libzip-dev zlib1g-dev \
     libicu-dev libxml2-dev libonig-dev \
-    default-mysql-client curl unzip git; \
+    default-mysql-client; \
   rm -rf /var/lib/apt/lists/*
 
-# Extensiones PHP requeridas por Chamilo
+# Extensiones PHP (gd, mysqli, pdo_mysql, zip, intl, mbstring, opcache, soap)
 RUN set -eux; \
   docker-php-ext-configure gd --with-freetype --with-jpeg; \
-  docker-php-ext-install -j"$(nproc)" gd mysqli pdo_mysql zip intl mbstring opcache
+  docker-php-ext-install -j"$(nproc)" gd mysqli pdo_mysql zip intl mbstring opcache soap
 
-# (Opcional) limpiar toolchain para aligerar imagen
+# (Opcional) Limpieza de toolchain para aligerar
 RUN set -eux; \
   apt-get update; \
   apt-get purge -y --auto-remove build-essential autoconf pkg-config; \
   rm -rf /var/lib/apt/lists/*
 
-# Copiamos el resultado de la Etapa 1 (código + vendor) al DocumentRoot
+# Copiar código + vendor desde la etapa deps
 COPY --from=deps /app/ /var/www/html/
 
-# Apache: rewrite, AllowOverride, DirectoryIndex y ServerName
+# Apache: mod_rewrite, AllowOverride, DirectoryIndex, ServerName
 RUN set -eux; \
   a2enmod rewrite; \
   printf "<Directory /var/www/html>\n  AllowOverride All\n  Require all granted\n</Directory>\n" > /etc/apache2/conf-available/override.conf; \
@@ -50,14 +69,14 @@ RUN set -eux; \
   printf "DirectoryIndex index.php index.html\nServerName localhost\n" > /etc/apache2/conf-available/dirindex.conf; \
   a2enconf dirindex
 
-# Permisos y carpetas de cache/logs
+# Permisos y carpetas necesarias
 RUN set -eux; \
   chown -R www-data:www-data /var/www/html; \
   find /var/www/html -type d -exec chmod 755 {} +; \
   find /var/www/html -type f -exec chmod 644 {} +; \
   install -d -o www-data -g www-data /var/www/html/app/cache /var/www/html/app/logs
 
-# Ajustes PHP recomendados
+# Ajustes PHP
 RUN set -eux; { \
   echo "upload_max_filesize=64M"; \
   echo "post_max_size=64M"; \
