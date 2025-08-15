@@ -6,21 +6,20 @@ FROM php:7.4-cli AS deps
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
 
-# Herramientas para Composer y ZIP
 RUN set -eux; \
   apt-get update; \
   apt-get install -y --no-install-recommends git unzip curl libzip-dev zlib1g-dev; \
   docker-php-ext-install -j"$(nproc)" zip; \
   rm -rf /var/lib/apt/lists/*
 
-# Instalar Composer
+# Composer
 RUN curl -sS https://getcomposer.org/installer | php -- \
   --install-dir=/usr/local/bin --filename=composer
 
 # Copiar Chamilo desde el repo (carpeta 'chamilo/')
 COPY chamilo/ /app/
 
-# Instalar dependencias (ignorando reqs de extensiones en CLI; en runtime sí estarán)
+# Instalar dependencias (ignorando reqs de extensiones en CLI)
 RUN set -eux; \
   composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader \
     --ignore-platform-req=ext-gd \
@@ -69,25 +68,20 @@ RUN set -eux; \
   printf "SetEnvIf X-Forwarded-Proto \"^https$\" HTTPS=on\n" > /etc/apache2/conf-available/forwarded.conf; \
   a2enconf forwarded
 
-# Script de arranque:
-# - Asegura que /var/www/html/app NO sea symlink (de despliegues anteriores).
-# - Enlaza SOLO subcarpetas de escritura a Disk: app/config, app/cache, app/logs, web, courses, archive, home, temp, upload, main/.../images, main/lang
-# - Aplica permisos, endurece tras instalación y ajusta puerto de Render.
+# Script de arranque (persistencia + permisos + endurecimiento + puerto)
 RUN printf '#!/bin/sh\nset -e\n'\
 'PORT=${PORT:-80}\n'\
 'DATA_DIR=${CHAMILO_DATA:-/var/www/chamilo-data}\n'\
 '\n'\
-'# Si por un despliegue anterior app es symlink, eliminarlo para restaurar app/ del código\n'\
+'# Asegurar que app/ NO sea symlink (de despliegues anteriores)\n'\
 'if [ -L /var/www/html/app ]; then\n'\
-'  echo "[INFO] Detected legacy symlink at /var/www/html/app → removing to restore code dir";\n'\
-'  rm -f /var/www/html/app;\n'\
-'  mkdir -p /var/www/html/app; # por si hiciera falta (normalmente ya existe por el COPY)\n'\
+'  echo "[INFO] Removing legacy symlink /var/www/html/app to restore code dir";\n'\
+'  rm -f /var/www/html/app; mkdir -p /var/www/html/app;\n'\
 'fi\n'\
 '\n'\
-'# Conjunto de carpetas de ESCRITURA que deben ser persistentes\n'\
+'# Directorios persistentes con ESCRITURA\n'\
 'PERSIST_DIRS="app/config app/cache app/logs web courses archive home temp upload main/default_course_document/images main/lang"\n'\
 '\n'\
-'# ¿Existe un Disk montado en DATA_DIR?\n'\
 'if grep -qs " $DATA_DIR " /proc/mounts; then\n'\
 '  echo "[INFO] Persistent disk detected at $DATA_DIR";\n'\
 '  for d in $PERSIST_DIRS; do\n'\
@@ -102,21 +96,25 @@ RUN printf '#!/bin/sh\nset -e\n'\
 '    fi;\n'\
 '    [ -L "$SRC" ] || ln -s "$DST" "$SRC";\n'\
 '  done;\n'\
+'  # Dueño y permisos en el Disk\n'\
 '  chown -R www-data:www-data "$DATA_DIR";\n'\
 '  chmod -R 775 "$DATA_DIR"/app "$DATA_DIR"/web "$DATA_DIR"/courses "$DATA_DIR"/archive "$DATA_DIR"/home "$DATA_DIR"/temp "$DATA_DIR"/upload "$DATA_DIR"/main "$DATA_DIR"/app/cache "$DATA_DIR"/app/logs 2>/dev/null || true;\n'\
 'else\n'\
 '  if [ "${ALLOW_EPHEMERAL:-}" = "1" ]; then\n'\
-'    echo "[WARN] No persistent disk mounted at $DATA_DIR. Running in EPHEMERAL mode (data will be lost).";\n'\
-'    for d in $PERSIST_DIRS; do\n'\
-'      mkdir -p "/var/www/html/$d"; chown -R www-data:www-data "/var/www/html/$d"; chmod -R 775 "/var/www/html/$d";\n'\
-'    done;\n'\
+'    echo "[WARN] No persistent disk mounted at $DATA_DIR. Running EPHEMERAL (data will be lost).";\n'\
+'    for d in $PERSIST_DIRS; do mkdir -p "/var/www/html/$d"; done;\n'\
+'    chown -R www-data:www-data /var/www/html/app /var/www/html/web /var/www/html/main /var/www/html/courses /var/www/html/archive /var/www/html/home /var/www/html/temp /var/www/html/upload;\n'\
+'    chmod -R 775 /var/www/html/app /var/www/html/web /var/www/html/main /var/www/html/courses /var/www/html/archive /var/www/html/home /var/www/html/temp /var/www/html/upload;\n'\
 '  else\n'\
-'    echo "[ERROR] No persistent disk mounted at $DATA_DIR. Attach a Disk or set ALLOW_EPHEMERAL=1 to proceed without persistence." >&2;\n'\
-'    exit 1;\n'\
+'    echo "[ERROR] No persistent disk mounted at $DATA_DIR. Attach a Disk or set ALLOW_EPHEMERAL=1." >&2; exit 1;\n'\
 '  fi;\n'\
 'fi\n'\
 '\n'\
-'# Endurecimiento post-instalación (si ya existe la config en el Disk)\n'\
+'# Durante la instalación, asegurar que /var/www/html/app sea escribible\n'\
+'chown www-data:www-data /var/www/html/app || true\n'\
+'chmod 775 /var/www/html/app || true\n'\
+'\n'\
+'# Endurecimiento post-instalación (si ya existe config en el Disk)\n'\
 'if [ -f "$DATA_DIR/app/config/configuration.php" ]; then\n'\
 '  chmod -R 0555 "$DATA_DIR/app/config" 2>/dev/null || true\n'\
 '  rm -rf /var/www/html/main/install 2>/dev/null || true\n'\
