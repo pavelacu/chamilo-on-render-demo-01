@@ -58,20 +58,25 @@ RUN set -eux; \
 # Copiar código + vendor desde la etapa deps
 COPY --from=deps /app/ /var/www/html/
 
-# Apache: rewrite, headers (HTTPS tras proxy), AllowOverride, DirectoryIndex, ServerName
+# Apache: rewrite, headers (HTTPS tras proxy), AllowOverride, FollowSymLinks, DirectoryIndex, ServerName
 RUN set -eux; \
   a2enmod rewrite headers; \
-  printf "<Directory /var/www/html>\n  AllowOverride All\n  Require all granted\n</Directory>\n" > /etc/apache2/conf-available/override.conf; \
+  printf "<Directory /var/www/html>\n  AllowOverride All\n  Require all granted\n  Options +FollowSymLinks\n</Directory>\n" > /etc/apache2/conf-available/override.conf; \
   a2enconf override; \
   printf "DirectoryIndex index.php index.html\nServerName ${SERVER_NAME:-localhost}\n" > /etc/apache2/conf-available/dirindex.conf; \
   a2enconf dirindex; \
   printf "SetEnvIf X-Forwarded-Proto \"^https$\" HTTPS=on\n" > /etc/apache2/conf-available/forwarded.conf; \
   a2enconf forwarded
 
+# Bootstrap PHP para forzar HTTPS/443 detrás de Render y evitar que Chamilo agregue :$PORT
+RUN printf "<?php\nif ((\$_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') { \$_SERVER['HTTPS']='on'; \$_SERVER['SERVER_PORT']=443; }\n?>" > /var/www/html/.render_bootstrap.php \
+ && echo "auto_prepend_file=/var/www/html/.render_bootstrap.php" > /usr/local/etc/php/conf.d/zz-render-bootstrap.ini
+
 # Script de arranque (persistencia + permisos + endurecimiento + puerto)
 RUN printf '#!/bin/sh\nset -e\n'\
 'PORT=${PORT:-80}\n'\
 'DATA_DIR=${CHAMILO_DATA:-/var/www/chamilo-data}\n'\
+'umask 0002\n'\
 '\n'\
 '# Asegurar que app/ NO sea symlink (de despliegues anteriores)\n'\
 'if [ -L /var/www/html/app ]; then\n'\
@@ -96,15 +101,18 @@ RUN printf '#!/bin/sh\nset -e\n'\
 '    fi;\n'\
 '    [ -L "$SRC" ] || ln -s "$DST" "$SRC";\n'\
 '  done;\n'\
-'  # Dueño y permisos en el Disk\n'\
+'  # Dueño y permisos en el Disk (más permisivo para instalación)\n'\
 '  chown -R www-data:www-data "$DATA_DIR";\n'\
 '  chmod -R 775 "$DATA_DIR"/app "$DATA_DIR"/web "$DATA_DIR"/courses "$DATA_DIR"/archive "$DATA_DIR"/home "$DATA_DIR"/temp "$DATA_DIR"/upload "$DATA_DIR"/main "$DATA_DIR"/app/cache "$DATA_DIR"/app/logs 2>/dev/null || true;\n'\
+'  # Requisitos que siguen en rojo: forzar 0777 en estas rutas\n'\
+'  chmod -R 0777 "$DATA_DIR/web" "$DATA_DIR/main/default_course_document/images" "$DATA_DIR/courses" 2>/dev/null || true;\n'\
 'else\n'\
 '  if [ "${ALLOW_EPHEMERAL:-}" = "1" ]; then\n'\
 '    echo "[WARN] No persistent disk mounted at $DATA_DIR. Running EPHEMERAL (data will be lost).";\n'\
 '    for d in $PERSIST_DIRS; do mkdir -p "/var/www/html/$d"; done;\n'\
 '    chown -R www-data:www-data /var/www/html/app /var/www/html/web /var/www/html/main /var/www/html/courses /var/www/html/archive /var/www/html/home /var/www/html/temp /var/www/html/upload;\n'\
 '    chmod -R 775 /var/www/html/app /var/www/html/web /var/www/html/main /var/www/html/courses /var/www/html/archive /var/www/html/home /var/www/html/temp /var/www/html/upload;\n'\
+'    chmod -R 0777 /var/www/html/web /var/www/html/main/default_course_document/images /var/www/html/courses 2>/dev/null || true;\n'\
 '  else\n'\
 '    echo "[ERROR] No persistent disk mounted at $DATA_DIR. Attach a Disk or set ALLOW_EPHEMERAL=1." >&2; exit 1;\n'\
 '  fi;\n'\
@@ -113,12 +121,6 @@ RUN printf '#!/bin/sh\nset -e\n'\
 '# Durante la instalación, asegurar que /var/www/html/app sea escribible\n'\
 'chown www-data:www-data /var/www/html/app || true\n'\
 'chmod 775 /var/www/html/app || true\n'\
-'\n'\
-'# ---- FIX explícito para requisitos del instalador ----\n'\
-'for P in "/var/www/html/web" "/var/www/html/main/default_course_document/images"; do\n'\
-'  mkdir -p "$P"; chown -R www-data:www-data "$P"; chmod -R 0777 "$P" || true;\n'\
-'done\n'\
-'# ------------------------------------------------------\n'\
 '\n'\
 '# Endurecimiento post-instalación (si ya existe config en el Disk)\n'\
 'if [ -f "$DATA_DIR/app/config/configuration.php" ]; then\n'\
