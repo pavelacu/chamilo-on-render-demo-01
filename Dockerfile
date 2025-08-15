@@ -114,6 +114,12 @@ RUN printf '#!/bin/sh\nset -e\n'\
 'chown www-data:www-data /var/www/html/app || true\n'\
 'chmod 775 /var/www/html/app || true\n'\
 '\n'\
+'# ---- FIX explícito para requisitos del instalador ----\n'\
+'for P in "/var/www/html/web" "/var/www/html/main/default_course_document/images"; do\n'\
+'  mkdir -p "$P"; chown -R www-data:www-data "$P"; chmod -R 0777 "$P" || true;\n'\
+'done\n'\
+'# ------------------------------------------------------\n'\
+'\n'\
 '# Endurecimiento post-instalación (si ya existe config en el Disk)\n'\
 'if [ -f "$DATA_DIR/app/config/configuration.php" ]; then\n'\
 '  chmod -R 0555 "$DATA_DIR/app/config" 2>/dev/null || true\n'\
