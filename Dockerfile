@@ -68,7 +68,7 @@ RUN set -eux; \
   printf "SetEnvIf X-Forwarded-Proto \"^https$\" HTTPS=on\n" > /etc/apache2/conf-available/forwarded.conf; \
   a2enconf forwarded
 
-# Bootstrap PHP para forzar HTTPS/443 detrás de Render y evitar que Chamilo agregue :$PORT
+# Bootstrap PHP para normalizar HTTPS/443
 RUN printf "<?php\nif ((\$_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') { \$_SERVER['HTTPS']='on'; \$_SERVER['SERVER_PORT']=443; }\n?>" > /var/www/html/.render_bootstrap.php \
  && echo "auto_prepend_file=/var/www/html/.render_bootstrap.php" > /usr/local/etc/php/conf.d/zz-render-bootstrap.ini
 
@@ -93,19 +93,19 @@ RUN printf '#!/bin/sh\nset -e\n'\
 '    SRC="/var/www/html/$d"; DST="$DATA_DIR/$d"; mkdir -p "$DST";\n'\
 '    if [ -e "$SRC" ] && [ ! -L "$SRC" ]; then\n'\
 '      if [ -d "$SRC" ]; then\n'\
+'        # mover contenido (si lo hay) y ELIMINAR la carpeta fuente para asegurar el symlink\n'\
 '        find "$SRC" -mindepth 1 -maxdepth 1 -exec mv -f {} "$DST"/ \\; 2>/dev/null || true;\n'\
-'        rmdir "$SRC" 2>/dev/null || true;\n'\
-'      else\n'\
-'        mv -f "$SRC" "$DST"/ 2>/dev/null || true; rm -f "$SRC" 2>/dev/null || true;\n'\
 '      fi;\n'\
+'      rm -rf "$SRC";\n'\
 '    fi;\n'\
 '    [ -L "$SRC" ] || ln -s "$DST" "$SRC";\n'\
 '  done;\n'\
-'  # Dueño y permisos en el Disk (más permisivo para instalación)\n'\
+'  # Permisos en el Disk (más permisivo para instalación)\n'\
 '  chown -R www-data:www-data "$DATA_DIR";\n'\
 '  chmod -R 775 "$DATA_DIR"/app "$DATA_DIR"/web "$DATA_DIR"/courses "$DATA_DIR"/archive "$DATA_DIR"/home "$DATA_DIR"/temp "$DATA_DIR"/upload "$DATA_DIR"/main "$DATA_DIR"/app/cache "$DATA_DIR"/app/logs 2>/dev/null || true;\n'\
-'  # Requisitos que siguen en rojo: forzar 0777 en estas rutas\n'\
+'  # Requisitos que siguen en rojo: forzar 0777 en destinos Y en las rutas del DocumentRoot\n'\
 '  chmod -R 0777 "$DATA_DIR/web" "$DATA_DIR/main/default_course_document/images" "$DATA_DIR/courses" 2>/dev/null || true;\n'\
+'  chmod -R 0777 "/var/www/html/web" "/var/www/html/main/default_course_document/images" "/var/www/html/courses" 2>/dev/null || true;\n'\
 'else\n'\
 '  if [ "${ALLOW_EPHEMERAL:-}" = "1" ]; then\n'\
 '    echo "[WARN] No persistent disk mounted at $DATA_DIR. Running EPHEMERAL (data will be lost).";\n'\
