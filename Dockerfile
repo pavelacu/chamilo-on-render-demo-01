@@ -46,9 +46,25 @@ RUN set -eux; \
     default-mysql-client; \
   rm -rf /var/lib/apt/lists/*
 
+# Core PHP extensions
 RUN set -eux; \
   docker-php-ext-configure gd --with-freetype --with-jpeg; \
   docker-php-ext-install -j"$(nproc)" gd mysqli pdo_mysql zip intl mbstring opcache soap
+
+# APCu from PECL (for PHP 7.4)
+RUN set -eux; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends $PHPIZE_DEPS; \
+  pecl install apcu-5.1.22; \
+  docker-php-ext-enable apcu; \
+  { \
+    echo "apc.enabled=1"; \
+    echo "apc.shm_size=64M"; \
+    echo "apc.enable_cli=0"; \
+    echo "apc.use_request_time=1"; \
+  } > /usr/local/etc/php/conf.d/apcu.ini; \
+  apt-get purge -y --auto-remove $PHPIZE_DEPS; \
+  rm -rf /var/lib/apt/lists/*
 
 # (Optional) trim toolchain
 RUN set -eux; \
