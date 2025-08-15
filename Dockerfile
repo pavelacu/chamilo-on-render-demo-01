@@ -82,7 +82,7 @@ RUN set -eux; \
   if [ -d /var/www/html/main/default_course_document/images ]; then cp -a /var/www/html/main/default_course_document/images/. /opt/chamilo-defaults/main/default_course_document/images/; fi
 # ----------------------------------------------------------------
 
-# Apache: rewrite + headers, AllowOverride, FollowSymLinks, ServerName, forwarded headers
+# Apache: rewrite + headers + mime, AllowOverride, FollowSymLinks, ServerName, forwarded headers, alias /courses
 RUN set -eux; \
   a2enmod rewrite headers mime; \
   printf "<Directory /var/www/html>\n  AllowOverride All\n  Require all granted\n  Options +FollowSymLinks\n</Directory>\n" > /etc/apache2/conf-available/override.conf; \
@@ -94,13 +94,15 @@ RUN set -eux; \
   printf "RequestHeader set X-Forwarded-Port 443\n" > /etc/apache2/conf-available/forwarded-port.conf; \
   a2enconf forwarded-port; \
   printf "RequestHeader set X-Forwarded-Proto https\n" > /etc/apache2/conf-available/force-https.conf; \
-  a2enconf force-https
+  a2enconf force-https; \
+  printf 'Alias /courses/ "/var/www/html/courses/"\n<Directory "/var/www/html/courses">\n  Options +Indexes +FollowSymLinks\n  Require all granted\n</Directory>\n' > /etc/apache2/conf-available/courses-alias.conf; \
+  a2enconf courses-alias
 
 # Bootstrap PHP so Chamilo never appends the internal port; always see HTTPS:443 behind Render
 RUN printf "<?php \$_SERVER['HTTPS']='on'; \$_SERVER['SERVER_PORT']=443; ?>" > /var/www/html/.render_bootstrap.php \
  && echo "auto_prepend_file=/var/www/html/.render_bootstrap.php" > /usr/local/etc/php/conf.d/zz-render-bootstrap.ini
 
-# Startup script: persistence (Disk), perms, repopulate assets if empty, test course, hardening, port
+# Startup script: persistence (Disk), perms, repopulate assets, force symlinks, test course, hardening, port
 RUN printf '#!/bin/sh\nset -e\n'\
 'PORT=${PORT:-80}\n'\
 'DATA_DIR=${CHAMILO_DATA:-/var/www/chamilo-data}\n'\
@@ -142,6 +144,20 @@ RUN printf '#!/bin/sh\nset -e\n'\
 '  chmod -R 0777 "$DATA_DIR/web" "$DATA_DIR/main/default_course_document/images" "$DATA_DIR/courses" 2>/dev/null || true;\n'\
 '  # Also ensure docroot paths (in case installer checks literal path, not symlink)\n'\
 '  chmod -R 0777 "/var/www/html/web" "/var/www/html/main/default_course_document/images" "/var/www/html/courses" 2>/dev/null || true;\n'\
+'\n'\
+'  # --- Force critical symlinks to DATA_DIR (docroot side) ---\n'\
+'  rm -rf /var/www/html/courses; ln -s "$DATA_DIR/courses" /var/www/html/courses;\n'\
+'  rm -rf /var/www/html/web;     ln -s "$DATA_DIR/web"     /var/www/html/web;\n'\
+'  mkdir -p "$DATA_DIR/main/default_course_document/images";\n'\
+'  rm -rf /var/www/html/main/default_course_document/images; ln -s "$DATA_DIR/main/default_course_document/images" /var/www/html/main/default_course_document/images;\n'\
+'\n'\
+'  # --- Ensure test course exists BOTH on disk and docroot ---\n'\
+'  mkdir -p "$DATA_DIR/courses/__XxTestxX__" "/var/www/html/courses/__XxTestxX__";\n'\
+'  if [ ! -f "$DATA_DIR/courses/__XxTestxX__/test.html" ]; then\n'\
+'    echo "<html><body>OK</body></html>" > "$DATA_DIR/courses/__XxTestxX__/test.html";\n'\
+'  fi;\n'\
+'  [ -f "/var/www/html/courses/__XxTestxX__/test.html" ] || cp -f "$DATA_DIR/courses/__XxTestxX__/test.html" "/var/www/html/courses/__XxTestxX__/test.html";\n'\
+'  chmod -R 0777 "$DATA_DIR/courses/__XxTestxX__" "/var/www/html/courses/__XxTestxX__" 2>/dev/null || true;\n'\
 'else\n'\
 '  if [ "${ALLOW_EPHEMERAL:-}" = "1" ]; then\n'\
 '    echo "[WARN] No persistent disk mounted at $DATA_DIR. Running EPHEMERAL (data will be lost).";\n'\
@@ -149,6 +165,9 @@ RUN printf '#!/bin/sh\nset -e\n'\
 '    chown -R www-data:www-data /var/www/html/app /var/www/html/web /var/www/html/main /var/www/html/courses /var/www/html/archive /var/www/html/home /var/www/html/temp /var/www/html/upload;\n'\
 '    chmod -R 775 /var/www/html/app /var/www/html/web /var/www/html/main /var/www/html/courses /var/www/html/archive /var/www/html/home /var/www/html/temp /var/www/html/upload;\n'\
 '    chmod -R 0777 /var/www/html/web /var/www/html/main/default_course_document/images /var/www/html/courses 2>/dev/null || true;\n'\
+'    mkdir -p "/var/www/html/courses/__XxTestxX__";\n'\
+'    [ -f "/var/www/html/courses/__XxTestxX__/test.html" ] || echo "<html><body>OK</body></html>" > "/var/www/html/courses/__XxTestxX__/test.html";\n'\
+'    chmod -R 0777 "/var/www/html/courses/__XxTestxX__" 2>/dev/null || true;\n'\
 '  else\n'\
 '    echo "[ERROR] No persistent disk mounted at $DATA_DIR. Attach a Disk or set ALLOW_EPHEMERAL=1." >&2; exit 1;\n'\
 '  fi;\n'\
@@ -157,15 +176,6 @@ RUN printf '#!/bin/sh\nset -e\n'\
 '# Make sure app/ is writable during install\n'\
 'chown www-data:www-data /var/www/html/app || true\n'\
 'chmod 775 /var/www/html/app || true\n'\
-'\n'\
-'# --- Ensure test course exists and is HTTP-served ---\n'\
-'mkdir -p "$DATA_DIR/courses/__XxTestxX__";\n'\
-'if [ ! -f "$DATA_DIR/courses/__XxTestxX__/test.html" ]; then\n'\
-'  echo "<html><body>OK</body></html>" > "$DATA_DIR/courses/__XxTestxX__/test.html";\n'\
-'fi\n'\
-'chmod -R 0777 "$DATA_DIR/courses/__XxTestxX__" 2>/dev/null || true;\n'\
-'chmod -R 0777 "/var/www/html/courses/__XxTestxX__" 2>/dev/null || true;\n'\
-'# ---------------------------------------------------\n'\
 '\n'\
 '# Post-install hardening (only if config exists on Disk)\n'\
 'if [ -f "$DATA_DIR/app/config/configuration.php" ]; then\n'\
