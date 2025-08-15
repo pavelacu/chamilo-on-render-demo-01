@@ -75,9 +75,16 @@ RUN set -eux; \
 # Copy code + vendor from deps stage
 COPY --from=deps /app/ /var/www/html/
 
+# ---- Keep a baseline copy of static assets inside the image ----
+RUN set -eux; \
+  mkdir -p /opt/chamilo-defaults/web /opt/chamilo-defaults/main/default_course_document/images; \
+  if [ -d /var/www/html/web ]; then cp -a /var/www/html/web/. /opt/chamilo-defaults/web/; fi; \
+  if [ -d /var/www/html/main/default_course_document/images ]; then cp -a /var/www/html/main/default_course_document/images/. /opt/chamilo-defaults/main/default_course_document/images/; fi
+# ----------------------------------------------------------------
+
 # Apache: rewrite + headers, AllowOverride, FollowSymLinks, ServerName, forwarded headers
 RUN set -eux; \
-  a2enmod rewrite headers; \
+  a2enmod rewrite headers mime; \
   printf "<Directory /var/www/html>\n  AllowOverride All\n  Require all granted\n  Options +FollowSymLinks\n</Directory>\n" > /etc/apache2/conf-available/override.conf; \
   a2enconf override; \
   printf "DirectoryIndex index.php index.html\nServerName ${SERVER_NAME:-localhost}\n" > /etc/apache2/conf-available/dirindex.conf; \
@@ -93,7 +100,7 @@ RUN set -eux; \
 RUN printf "<?php \$_SERVER['HTTPS']='on'; \$_SERVER['SERVER_PORT']=443; ?>" > /var/www/html/.render_bootstrap.php \
  && echo "auto_prepend_file=/var/www/html/.render_bootstrap.php" > /usr/local/etc/php/conf.d/zz-render-bootstrap.ini
 
-# Startup script: persistence (Disk), perms, create test course, hardening, port
+# Startup script: persistence (Disk), perms, repopulate assets if empty, test course, hardening, port
 RUN printf '#!/bin/sh\nset -e\n'\
 'PORT=${PORT:-80}\n'\
 'DATA_DIR=${CHAMILO_DATA:-/var/www/chamilo-data}\n'\
@@ -121,6 +128,14 @@ RUN printf '#!/bin/sh\nset -e\n'\
 '    fi;\n'\
 '    [ -L "$SRC" ] || ln -s "$DST" "$SRC";\n'\
 '  done;\n'\
+'  # If web assets missing on Disk, repopulate from baseline in the image\n'\
+'  if [ ! -f "$DATA_DIR/web/assets/bootstrap/dist/js/bootstrap.min.js" ]; then\n'\
+'    echo "[INFO] Repopulating web assets from baseline...";\n'\
+'    mkdir -p "$DATA_DIR/web"; cp -a /opt/chamilo-defaults/web/. "$DATA_DIR/web/" 2>/dev/null || true;\n'\
+'  fi;\n'\
+'  if [ ! -d "$DATA_DIR/main/default_course_document/images" ] || [ -z "$(ls -A "$DATA_DIR/main/default_course_document/images" 2>/dev/null)" ]; then\n'\
+'    mkdir -p "$DATA_DIR/main/default_course_document/images"; cp -a /opt/chamilo-defaults/main/default_course_document/images/. "$DATA_DIR/main/default_course_document/images/" 2>/dev/null || true;\n'\
+'  fi;\n'\
 '  # Perms on Disk (looser for installer)\n'\
 '  chown -R www-data:www-data "$DATA_DIR";\n'\
 '  chmod -R 775 "$DATA_DIR"/app "$DATA_DIR"/web "$DATA_DIR"/courses "$DATA_DIR"/archive "$DATA_DIR"/home "$DATA_DIR"/temp "$DATA_DIR"/upload "$DATA_DIR"/main "$DATA_DIR"/app/cache "$DATA_DIR"/app/logs 2>/dev/null || true;\n'\
