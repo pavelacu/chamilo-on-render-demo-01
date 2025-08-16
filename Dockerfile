@@ -84,7 +84,7 @@ RUN set -eux; \
 
 # Apache: rewrite + headers + mime, AllowOverride, FollowSymLinks, ServerName, forwarded headers, alias /courses
 RUN set -eux; \
-  a2enmod rewrite headers mime; \
+  a2enmod rewrite headers mime alias; \
   printf "<Directory /var/www/html>\n  AllowOverride All\n  Require all granted\n  Options +FollowSymLinks\n</Directory>\n" > /etc/apache2/conf-available/override.conf; \
   a2enconf override; \
   printf "DirectoryIndex index.php index.html\nServerName ${SERVER_NAME:-localhost}\n" > /etc/apache2/conf-available/dirindex.conf; \
@@ -141,23 +141,21 @@ RUN printf '#!/bin/sh\nset -e\n'\
 '  # Perms on Disk (looser for installer)\n'\
 '  chown -R www-data:www-data "$DATA_DIR";\n'\
 '  chmod -R 775 "$DATA_DIR"/app "$DATA_DIR"/web "$DATA_DIR"/courses "$DATA_DIR"/archive "$DATA_DIR"/home "$DATA_DIR"/temp "$DATA_DIR"/upload "$DATA_DIR"/main "$DATA_DIR"/app/cache "$DATA_DIR"/app/logs 2>/dev/null || true;\n'\
-'  chmod -R 0777 "$DATA_DIR/web" "$DATA_DIR/main/default_course_document/images" "$DATA_DIR/courses" 2>/dev/null || true;\n'\
-'  # Also ensure docroot paths (in case installer checks literal path, not symlink)\n'\
-'  chmod -R 0777 "/var/www/html/web" "/var/www/html/main/default_course_document/images" "/var/www/html/courses" 2>/dev/null || true;\n'\
+'  chmod -R 0777 "$DATA_DIR"/web "$DATA_DIR"/main/default_course_document/images "$DATA_DIR"/courses 2>/dev/null || true;\n'\
 '\n'\
 '  # --- Force critical symlinks to DATA_DIR (docroot side) ---\n'\
 '  rm -rf /var/www/html/courses; ln -s "$DATA_DIR/courses" /var/www/html/courses;\n'\
-'  rm -rf /var/www/html/web;     ln -s "$DATA_DIR/web"     /var/www/html/web;\n'\
+'  rm -rf /var/www/html/web;     ln -s "$DATA_DIR/web"      /var/www/html/web;\n'\
 '  mkdir -p "$DATA_DIR/main/default_course_document/images";\n'\
 '  rm -rf /var/www/html/main/default_course_document/images; ln -s "$DATA_DIR/main/default_course_document/images" /var/www/html/main/default_course_document/images;\n'\
 '\n'\
 '  # --- Ensure test course exists BOTH on disk and docroot ---\n'\
-'  mkdir -p "$DATA_DIR/courses/__XxTestxX__" "/var/www/html/courses/__XxTestxX__";\n'\
+'  mkdir -p "$DATA_DIR/courses/__XxTestxX__";\n'\
 '  if [ ! -f "$DATA_DIR/courses/__XxTestxX__/test.html" ]; then\n'\
 '    echo "<html><body>OK</body></html>" > "$DATA_DIR/courses/__XxTestxX__/test.html";\n'\
 '  fi;\n'\
-'  [ -f "/var/www/html/courses/__XxTestxX__/test.html" ] || cp -f "$DATA_DIR/courses/__XxTestxX__/test.html" "/var/www/html/courses/__XxTestxX__/test.html";\n'\
-'  chmod -R 0777 "$DATA_DIR/courses/__XxTestxX__" "/var/www/html/courses/__XxTestxX__" 2>/dev/null || true;\n'\
+'  chown -R www-data:www-data "$DATA_DIR/courses/__XxTestxX__";\n'\
+'  chmod -R 0777 "$DATA_DIR/courses/__XxTestxX__";\n'\
 'else\n'\
 '  if [ "${ALLOW_EPHEMERAL:-}" = "1" ]; then\n'\
 '    echo "[WARN] No persistent disk mounted at $DATA_DIR. Running EPHEMERAL (data will be lost).";\n'\
