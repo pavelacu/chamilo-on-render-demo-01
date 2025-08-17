@@ -36,7 +36,7 @@ FROM php:7.4-apache
 ENV DEBIAN_FRONTEND=noninteractive
 
 # System libs and PHP extensions needed by Chamilo
-# Se reemplaza default-mysql-client por postgresql-client
+# Se reemplaza default-mysql-client por postgresql-client y se añade libpq-dev
 RUN set -eux; \
   apt-get update; \
   apt-get install -y --no-install-recommends \
@@ -44,7 +44,7 @@ RUN set -eux; \
     libpng-dev libjpeg-dev libfreetype6-dev \
     libzip-dev zlib1g-dev \
     libicu-dev libxml2-dev libonig-dev \
-    postgresql-client; \
+    postgresql-client libpq-dev; \
   rm -rf /var/lib/apt/lists/*
 
 # Core PHP extensions
