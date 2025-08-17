@@ -95,7 +95,7 @@ RUN set -eux; \
   a2enconf forwarded-port; \
   printf "RequestHeader set X-Forwarded-Proto https\n" > /etc/apache2/conf-available/force-https.conf; \
   a2enconf force-https; \
-  printf 'Alias /courses/ "/var/www/chamilo-data/courses/"\n<Directory "/var/www/chamilo-data/courses">\n  Options +Indexes +FollowSymLinks\n  Require all granted\n</Directory>\n' > /etc/apache2/conf-available/courses-alias.conf; \
+  printf 'Alias /courses/ "/var/www/chamilo-data/courses/"\n<Directory "/var/www/chamilo-data/courses">\n  Options +Indexes +FollowSymLinks\n  Require all granted\n  SetHandler None\n</Directory>\n' > /etc/apache2/conf-available/courses-alias.conf; \
   a2enconf courses-alias
 
 # Bootstrap PHP so Chamilo never appends the internal port; always see HTTPS:443 behind Render
