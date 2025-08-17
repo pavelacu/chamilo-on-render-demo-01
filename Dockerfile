@@ -36,6 +36,7 @@ FROM php:7.4-apache
 ENV DEBIAN_FRONTEND=noninteractive
 
 # System libs and PHP extensions needed by Chamilo
+# Se reemplaza default-mysql-client por postgresql-client
 RUN set -eux; \
   apt-get update; \
   apt-get install -y --no-install-recommends \
@@ -43,13 +44,14 @@ RUN set -eux; \
     libpng-dev libjpeg-dev libfreetype6-dev \
     libzip-dev zlib1g-dev \
     libicu-dev libxml2-dev libonig-dev \
-    default-mysql-client; \
+    postgresql-client; \
   rm -rf /var/lib/apt/lists/*
 
 # Core PHP extensions
+# Se reemplazan las extensiones de MySQL por las de PostgreSQL (pdo_pgsql y pgsql)
 RUN set -eux; \
   docker-php-ext-configure gd --with-freetype --with-jpeg; \
-  docker-php-ext-install -j"$(nproc)" gd mysqli pdo_mysql zip intl mbstring opcache soap
+  docker-php-ext-install -j"$(nproc)" gd pdo_pgsql pgsql zip intl mbstring opcache soap
 
 # APCu from PECL (for PHP 7.4)
 RUN set -eux; \
