@@ -140,8 +140,7 @@ RUN printf '#!/bin/sh\nset -e\n'\
 '  fi;\n'\
 '  # Perms on Disk (looser for installer)\n'\
 '  chown -R www-data:www-data "$DATA_DIR";\n'\
-'  chmod -R 775 "$DATA_DIR"/app "$DATA_DIR"/web "$DATA_DIR"/courses "$DATA_DIR"/archive "$DATA_DIR"/home "$DATA_DIR"/temp "$DATA_DIR"/upload "$DATA_DIR"/main "$DATA_DIR"/app/cache "$DATA_DIR"/app/logs 2>/dev/null || true;\n'\
-'  chmod -R 0777 "$DATA_DIR"/web "$DATA_DIR"/main/default_course_document/images "$DATA_DIR"/courses 2>/dev/null || true;\n'\
+'  chmod -R 777 "$DATA_DIR"/app "$DATA_DIR"/web "$DATA_DIR"/courses "$DATA_DIR"/archive "$DATA_DIR"/home "$DATA_DIR"/temp "$DATA_DIR"/upload "$DATA_DIR"/main "$DATA_DIR"/app/cache "$DATA_DIR"/app/logs 2>/dev/null || true;\n'\
 '\n'\
 '  # --- Force critical symlinks to DATA_DIR (docroot side) ---\n'\
 '  rm -rf /var/www/html/courses; ln -s "$DATA_DIR/courses" /var/www/html/courses;\n'\
@@ -161,7 +160,7 @@ RUN printf '#!/bin/sh\nset -e\n'\
 '    echo "[WARN] No persistent disk mounted at $DATA_DIR. Running EPHEMERAL (data will be lost).";\n'\
 '    for d in $PERSIST_DIRS; do mkdir -p "/var/www/html/$d"; done;\n'\
 '    chown -R www-data:www-data /var/www/html/app /var/www/html/web /var/www/html/main /var/www/html/courses /var/www/html/archive /var/www/html/home /var/www/html/temp /var/www/html/upload;\n'\
-'    chmod -R 775 /var/www/html/app /var/www/html/web /var/www/html/main /var/www/html/courses /var/www/html/archive /var/www/html/home /var/www/html/temp /var/www/html/upload;\n'\
+'    chmod -R 777 /var/www/html/app /var/www/html/web /var/www/html/main /var/www/html/courses /var/www/html/archive /var/www/html/home /var/www/html/temp /var/www/html/upload;\n'\
 '    chmod -R 0777 /var/www/html/web /var/www/html/main/default_course_document/images /var/www/html/courses 2>/dev/null || true;\n'\
 '    mkdir -p "/var/www/html/courses/__XxTestxX__";\n'\
 '    [ -f "/var/www/html/courses/__XxTestxX__/test.html" ] || echo "<html><body>OK</body></html>" > "/var/www/html/courses/__XxTestxX__/test.html";\n'\
