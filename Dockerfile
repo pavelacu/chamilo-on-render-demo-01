@@ -51,7 +51,8 @@ RUN set -eux; \
 # Se reemplazan las extensiones de MySQL por las de PostgreSQL (pdo_pgsql y pgsql)
 RUN set -eux; \
   docker-php-ext-configure gd --with-freetype --with-jpeg; \
-  docker-php-ext-install -j"$(nproc)" gd pdo_pgsql pgsql zip intl mbstring opcache soap
+  docker-php-ext-install -j"$(nproc)" gd pdo_pgsql pgsql zip intl mbstring opcache soap; \
+  docker-php-ext-enable pdo_pgsql pgsql
 
 # APCu from PECL (for PHP 7.4)
 RUN set -eux; \
